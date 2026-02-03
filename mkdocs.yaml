@@ -1,6 +1,6 @@
 site_name: "Dynatrace Data Access & Partitioning"
 repo_name: "View Code on GitHub"
-repo_url: "https://github.com/dynatrace-ace/data-access-and-partitioning-codespaces"
+repo_url: "https://dt-apac-services.github.io/data-access-and-partitioning-codespaces"
 nav:
   - "Before You Begin": index.md
   - "Deploy Codespace": B-deploy-codespace.md
