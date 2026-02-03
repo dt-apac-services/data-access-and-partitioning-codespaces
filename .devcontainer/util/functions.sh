@@ -76,6 +76,7 @@ postCodespaceTracker(){
   \"codespace.type\": \"$INSTANTIATION_TYPE\",
   \"codespace.arch\": \"$ARCH\",
   \"codespace.name\": \"$CODESPACE_NAME\",
+  \"environment\": \"$DT_ENVIRONMENT\",
   \"tenant\": \"$DT_TENANT\"
   }"
 }
@@ -179,21 +180,34 @@ waitForAllReadyPods() {
 }
 
 waitAppCanHandleRequests(){
-  # Function to filter by Namespace, default is ALL
-  if [[ $# -eq 1 ]]; then
+  # Function to verify app can handle requests on a given port
+  # First parameter: PORT (default: 30100)
+  # Second parameter: RETRY_MAX (default: 5)
+  # Usage examples:
+  #   waitAppCanHandleRequests          - uses default port 30100 and 5 retries
+  #   waitAppCanHandleRequests 8080     - uses port 8080 and 5 retries
+  #   waitAppCanHandleRequests 8080 10  - uses port 8080 and 10 retries
+  if [[ $# -eq 0 ]]; then
+    PORT="30100"
+    RETRY_MAX=5
+  elif [[ $# -eq 1 ]]; then
     PORT="$1"
+    RETRY_MAX=5
+  elif [[ $# -eq 2 ]]; then
+    PORT="$1"
+    RETRY_MAX="$2"
   else
     PORT="30100"
+    RETRY_MAX=5
   fi
   
   RC="500"
 
   URL=http://localhost:$PORT
   RETRY=0
-  RETRY_MAX=5
   # Get all pods, count and invert the search for not running nor completed. Status is for deleting the last line of the output
   CMD="curl --silent $URL > /dev/null"
-  printInfo "Verifying that the app can handle HTTP requests on $URL"
+  printInfo "Verifying that the app can handle HTTP requests on $URL (max retries: $RETRY_MAX)"
   while [[ $RETRY -lt $RETRY_MAX ]]; do
     RESPONSE=$(eval "$CMD")
     RC=$?
@@ -220,7 +234,9 @@ waitAppCanHandleRequests(){
 
 installHelm() {
   # https://helm.sh/docs/intro/install/#from-script
-  printInfoSection " Installing Helm"
+  # DESIRED_VERSION="$HELM_VERSION" ##TODO: Helm version control from variables.sh
+  printInfoSection "Installing Helm"
+  # printInfo "Helm Desired Version: ${HELM_VERSION}"
   cd /tmp
   sudo curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
   sudo chmod 700 get_helm.sh
@@ -303,8 +319,118 @@ setUpTerminal(){
   bindFunctionsInShell
 
   setupAliases
+
+  setupMCPServer
 }
 
+setupMCPServer(){
+  # Function that verifies if the .env file exists and if it contains the DT_ENVIRONMENT variable, if yes it sets it up, if not it defaults to playground.
+  printInfoSection "Setting up the Dynatrace 🧠 MCP Server for VS Code"
+  local environment=false
+  
+  # Check if .devcontainer/runlocal/.env file exists, if not then create it
+  if [ ! -f "$ENV_FILE" ]; then
+    printInfo ".env file not found. Creating it..."
+    touch "$ENV_FILE"
+    # Add default var
+    setEnvironmentInEnv
+  else
+    printInfo ".env file already exists."
+    
+    while IFS= read -r line || [ -n "$line" ]; do
+      # Skip empty lines and comments
+      if [[ -z "$line" || "$line" =~ ^# ]]; then
+        continue
+      fi
+      # Split the line into key and value
+      IFS='=' read -r key value <<< "$line"
+      # Print or process the key-value pair
+      if [ "$key" = "DT_ENVIRONMENT" ]; then
+          printInfo "DT_ENVIRONMENT is set to $value"
+          environment=true
+      fi
+    done < "$ENV_FILE"
+
+    if [ $environment = false ]; then
+      setEnvironmentInEnv
+    fi
+
+  fi
+
+  printInfo "Settings location: .vscode/mcp.json"
+  printInfo "Environment variables location: $ENV_FILE"
+}
+
+selectEnvironment(){
+  # Check if DT_ENVIRONMENT is already set
+  if [ -n "$DT_ENVIRONMENT" ]; then
+    printWarn "DT_ENVIRONMENT is already set to $DT_ENVIRONMENT. This function will override the DT_ENVIRONMENT environment variable and the entry in the $ENV_FILE file."
+    printWarn "You should be careful if you have other variables needed for that environment such as API Tokens."
+    printf "Do you want to override it? (y/n): "
+    read override
+    if [ "$override" != "y" ] && [ "$override" != "Y" ]; then
+      printInfo "Keeping existing DT_ENVIRONMENT. Exiting function."
+      return
+    fi
+  fi
+
+  printInfoSection "🧠 Please select the Environment you want to connect to:"
+  printInfo "1. playground (wkf10640)"
+  printInfo "2. demo.live (guu84124)"
+  printInfo "3. tacocorp (bwm98081)"
+  printInfo "4. other, you'll be prompted to enter the full URL (Prod/Sprint/Dev)"
+  printf "Enter your choice (1-4): "
+  read choice
+  case $choice in
+    1)
+      DT_ENVIRONMENT="https://wkf10640.apps.dynatrace.com"
+      ;;
+    2)
+      DT_ENVIRONMENT="https://guu84124.apps.dynatrace.com"
+      ;;
+    3)
+      DT_ENVIRONMENT="https://bwm98081.apps.dynatrace.com"
+      ;;
+    4)
+      printf "Enter in the format eg. https://abc123.apps.dynatrace.com or for sprint -> https://abc123.sprint.apps.dynatracelabs.com\nURL to your Dynatrace Platform:"
+      read -r DT_ENVIRONMENT
+      # Basic validation to ensure it starts with https://
+      if [[ ! "$DT_ENVIRONMENT" =~ ^https:// ]]; then
+        printWarn "URL should start with 'https://'. Please try again."
+        return 1
+      fi
+      ;;
+    *)
+      printWarn "Invalid choice. Defaulting to playground."
+      DT_ENVIRONMENT="https://wkf10640.apps.dynatrace.com"
+      ;;
+  esac
+
+  export DT_ENVIRONMENT=$DT_ENVIRONMENT
+  if [ -f "$ENV_FILE" ]; then
+    # Remove existing DT_ENVIRONMENT line if present (including lines with leading spaces)
+    sed '/^[[:space:]]*DT_ENVIRONMENT=/d' "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
+  fi
+  echo "DT_ENVIRONMENT=$DT_ENVIRONMENT" >> "$ENV_FILE"
+
+  printInfo "Selected Demo Environment: $DT_ENVIRONMENT"
+
+  printInfoSection "$DT_ENVIRONMENT selected, the VS Code agent should start the MPC server automatically"
+  printInfo "you can alternatively go to 'Extensions > MCP Servers installed > dynatrace-mcp-server' and start it."
+  printInfo "If you want to connect to another MCP server, just type the function 'selectEnvironment'"
+
+}
+
+setEnvironmentInEnv(){
+  if [ -z "${DT_ENVIRONMENT}" ]; then
+    printWarn "DT_ENVIRONMENT is missing as environment variable defaulting to playground "
+    DT_ENVIRONMENT="https://wkf10640.apps.dynatrace.com"
+  else
+    printInfo "DT_ENVIRONMENT found as environment variable ($DT_ENVIRONMENT) and writing to file"
+  fi
+  echo -e "DT_ENVIRONMENT=$DT_ENVIRONMENT" >> "$ENV_FILE"
+  export DT_ENVIRONMENT=$DT_ENVIRONMENT
+}
 
 bindFunctionsInShell() {
   printInfo "Binding functions.sh and adding a Greeting in the .zshrc for user $USER "
@@ -345,6 +471,7 @@ alias pg='ps -aux | grep'
 }
 
 installRunme() {
+  printInfoSection "Installing Runme"
   mkdir runme_binary
   if [[ "$ARCH" == "x86_64" ]]; then
     printInfoSection "Installing Runme Version $RUNME_CLI_VERSION for AMD/x86"
@@ -477,11 +604,13 @@ certmanagerEnable() {
 }
 
 validateSaveCredentials() {
+  #TODO: Refactor to evaluate variables with an indirect expansion (var name and value)
   if [[ $# -eq 3 ]]; then
     printInfo "Validating and saving Secrets DT_TENANT DT_OPERATOR_TOKEN DT_INGEST_TOKEN"
     DT_TENANT=$1
     DT_OPERATOR_TOKEN=$2
     DT_INGEST_TOKEN=$3
+    #TODO: Fix this when refactoring, only printing out when return == 0 but not 1.
     verifyParseSecret $DT_TENANT true; [ $? -eq 1 ] && verifyParseSecret $DT_TENANT false || DT_TENANT=$(verifyParseSecret $DT_TENANT false)
     verifyParseSecret $DT_OPERATOR_TOKEN true; [ $? -eq 1 ] && verifyParseSecret $DT_OPERATOR_TOKEN false || DT_OPERATOR_TOKEN=$(verifyParseSecret $DT_OPERATOR_TOKEN false)
     verifyParseSecret $DT_INGEST_TOKEN true; [ $? -eq 1 ] && verifyParseSecret $DT_INGEST_TOKEN false || DT_INGEST_TOKEN=$(verifyParseSecret $DT_INGEST_TOKEN false)
@@ -490,10 +619,12 @@ validateSaveCredentials() {
     kubectl delete configmap -n default dtcredentials 2>/dev/null
 
     kubectl create configmap -n default dtcredentials \
+      --from-literal=environment=${DT_ENVIRONMENT} \
       --from-literal=tenant=${DT_TENANT} \
       --from-literal=apiToken=${DT_OPERATOR_TOKEN} \
       --from-literal=dataIngestToken=${DT_INGEST_TOKEN}
     # Exporting clean values
+    export DT_ENVIRONMENT=$DT_ENVIRONMENT
     export DT_TENANT=$DT_TENANT
     export DT_OPERATOR_TOKEN=$DT_OPERATOR_TOKEN
     export DT_INGEST_TOKEN=$DT_INGEST_TOKEN
@@ -501,7 +632,7 @@ validateSaveCredentials() {
     export DT_OTEL_ENDPOINT=$DT_OTEL_ENDPOINT
     return 0
   else
-    printError "validateSaveCredentials function should be used like saveCredentials DT_TENANT DT_OPERATOR_TOKEN DT_INGEST_TOKEN"
+    printError "validateSaveCredentials function should be used like saveCredentials DT_ENVIRONMENT DT_OPERATOR_TOKEN DT_INGEST_TOKEN"
     return 1
   fi
 }
@@ -534,13 +665,13 @@ verifyParseSecret(){
       
       # Parse Production tenants
       if echo "$secret" | grep -q "\.apps\.dynatrace\.com"; then
-        printWarn "Production tenant invalid for API requests: changing apps for live" $print_log
+        printInfo "Production environment changing apps for live for API request" $print_log
         secret=$(echo "$secret" | sed 's/\.apps\.dynatrace\.com.*$/\.live.dynatrace\.com/g')
       fi
       
       # Parse for Sprint & DEV tenants
       if echo "$secret" | grep -q "\.apps\.dynatracelabs\.com"; then
-        printWarn "Sprint tenant invalid for API requests: removing apps" $print_log
+        printWarn "Sprint environment removing apps for API requests" $print_log
         secret=$(echo "$secret" | sed 's/\.apps\.dynatracelabs\.com.*$/\.dynatracelabs\.com/g')
       fi
       # remove anything after .com
@@ -561,7 +692,7 @@ verifyParseSecret(){
       return 0
     else
       printError "Invalid secret, this is not a valid dynatrace tenant nor dynatrace token, please verify this: $secret" $print_log
-    return 1
+      return 1
     fi
   fi
 
@@ -578,44 +709,64 @@ dynatraceEvalReadSaveCredentials() {
   local found=1
 
   if [[ $# -eq 3 ]]; then
-    DT_TENANT=$1
+    DT_ENVIRONMENT=$1
     DT_OPERATOR_TOKEN=$2
     DT_INGEST_TOKEN=$3
     # Passed as argument
+    # We shuffle environment to tenant to modify tenant for API usage
+    DT_TENANT=$DT_ENVIRONMENT
     printInfo "Secrets passed as arguments"
-    validateSaveCredentials $DT_TENANT $DT_OPERATOR_TOKEN $DT_INGEST_TOKEN
+    validateSaveCredentials "$DT_TENANT" "$DT_OPERATOR_TOKEN" "$DT_INGEST_TOKEN"
     found=0
 
-  elif [[ -n "${DT_TENANT}" && -n "${DT_OPERATOR_TOKEN}" && -n "${DT_INGEST_TOKEN}" ]]; then
+  elif [[ -n "${DT_ENVIRONMENT}" && -n "${DT_OPERATOR_TOKEN}" && -n "${DT_INGEST_TOKEN}" ]]; then
     # Found in env 
     printInfo "Secrets found in environment variables"
-    validateSaveCredentials $DT_TENANT $DT_OPERATOR_TOKEN $DT_INGEST_TOKEN
+
+    # We shuffle environment to tenant to modify tenant for API usage
+    DT_TENANT=$DT_ENVIRONMENT
+    validateSaveCredentials "$DT_TENANT" "$DT_OPERATOR_TOKEN" "$DT_INGEST_TOKEN"
     found=0
-  elif [[ -n "${DT_TENANT}" && -z "${DT_OPERATOR_TOKEN}" && -z "${DT_INGEST_TOKEN}" ]]; then
-    printWarn "Dynatrace Tenant defined but tokens are missing"
-    validateSaveCredentials $DT_TENANT $DT_OPERATOR_TOKEN $DT_INGEST_TOKEN
+  elif [[ -n "${DT_ENVIRONMENT}" ]]; then
+    printWarn "Dynatrace Environment defined but tokens are missing"
+
+    if [ -z "$DT_OPERATOR_TOKEN" ]; then
+      printWarn "DT_OPERATOR_TOKEN is missing"
+    fi
+    
+    if [ -z "$DT_INGEST_TOKEN" ]; then
+      printWarn "DT_INGEST_TOKEN is missing"
+    fi
+    
+    # We shuffle environment to tenant to modify tenant for API usage
+    DT_TENANT=$DT_ENVIRONMENT
+    validateSaveCredentials "$DT_TENANT" "$DT_OPERATOR_TOKEN" "$DT_INGEST_TOKEN"
     found=0
   else
-    printWarn "Dynatrace secrets not found as arguments nor env vars, reading from config map"
+    printWarn "Dynatrace secrets not found as arguments nor env vars, trying to fetch from config map"
     kubectl get configmap -n default dtcredentials 2>/dev/null
-    # Getting the data size
-    data=$(kubectl get configmap -n default dtcredentials | awk '{print $2}')
-    # parsing to number
-    size=$(echo $data | grep -o '[0-9]*')
-    printInfo "The Configmap has $size variables stored"
     if [[ $? -eq 0 ]]; then
+      printInfo "ConfigMap found, reading from it"
+      # Getting the data size
+      data=$(kubectl get configmap -n default dtcredentials | awk '{print $2}')
+      # parsing to number
+      size=$(echo $data | grep -o '[0-9]*')
+      printInfo "The Configmap has $size variables stored"
+      DT_ENVIRONMENT=$(kubectl get configmap -n default dtcredentials -ojsonpath={.data.environment})
       DT_TENANT=$(kubectl get configmap -n default dtcredentials -ojsonpath={.data.tenant})
       DT_OPERATOR_TOKEN=$(kubectl get configmap -n default dtcredentials -ojsonpath={.data.apiToken})
       DT_INGEST_TOKEN=$(kubectl get configmap -n default dtcredentials -ojsonpath={.data.dataIngestToken})
       found=0
     else
         printInfo "ConfigMap not found, resetting variables"
-        unset DT_TENANT DT_OPERATOR_TOKEN DT_INGEST_TOKEN
+        unset DT_ENVIRONMENT DT_TENANT DT_OPERATOR_TOKEN DT_INGEST_TOKEN
     fi
+
   fi
 
   if [[ $found -eq 0 ]]; then
 
+    export DT_ENVIRONMENT=$DT_ENVIRONMENT
     export DT_TENANT=$DT_TENANT
     export DT_OPERATOR_TOKEN=$DT_OPERATOR_TOKEN
     export DT_INGEST_TOKEN=$DT_INGEST_TOKEN
@@ -626,7 +777,7 @@ dynatraceEvalReadSaveCredentials() {
   else 
     printError "No Dynatrace secrets have been found in the environment and are needed for Dynatrace components."
     unset DT_EVAL_SECRETS
-    exit 1
+    return 1
   fi
 
   return $found
@@ -634,17 +785,20 @@ dynatraceEvalReadSaveCredentials() {
 
 printSecrets(){
     # Print all known vars
-    printInfo "Dynatrace Tenant: $DT_TENANT"
+    printInfo "Dynatrace Environment: $DT_ENVIRONMENT"
+    printInfo "Dynatrace Tenant (for API): $DT_TENANT"
     printInfo "Dynatrace API & PaaS Token: ${DT_OPERATOR_TOKEN:0:14}xxx..."
     printInfo "Dynatrace Ingest Token: ${DT_INGEST_TOKEN:0:14}xxx..."
     printInfo "Dynatrace Otel API Token: ${DT_INGEST_TOKEN:0:14}xxx..."
     printInfo "Dynatrace Otel Endpoint: $DT_OTEL_ENDPOINT"
+    printInfo "Secrets stored as configmap, type 'kubectl get configmap -n default dtcredentials -o json' to see them."
+
 }
 
 deployCloudNative() {
   dynatraceEvalReadSaveCredentials "$@"
 
-  printInfoSection "Deploying Dynatrace in CloudNativeFullStack mode for $DT_TENANT"
+  printInfoSection "Deploying Dynatrace in CloudNativeFullStack mode for $DT_ENVIRONMENT"
   if [ -n "${DT_TENANT}" ]; then
     # Check if the Webhook has been created and is ready
     kubectl -n dynatrace wait pod --for=condition=ready --selector=app.kubernetes.io/name=dynatrace-operator,app.kubernetes.io/component=webhook --timeout=300s
@@ -654,7 +808,6 @@ deployCloudNative() {
     printInfo "Log capturing will be handled by the Host agent."
     
     # we wait for the AG to be scheduled
-    #TODO: Fix this part once active gate is working again
     waitForPod dynatrace activegate
     
     waitForAllReadyPods dynatrace
@@ -667,7 +820,7 @@ deployApplicationMonitoring() {
 
   dynatraceEvalReadSaveCredentials "$@"
 
-  printInfoSection "Deploying Dynatrace in ApplicationMonitoring mode for $DT_TENANT"
+  printInfoSection "Deploying Dynatrace in ApplicationMonitoring mode for $DT_ENVIRONMENT"
   if [ -n "${DT_TENANT}" ]; then
     # Check if the Webhook has been created and is ready
     kubectl -n dynatrace wait pod --for=condition=ready --selector=app.kubernetes.io/name=dynatrace-operator,app.kubernetes.io/component=webhook --timeout=300s
@@ -710,6 +863,7 @@ dynatraceDeployOperator() {
   printInfoSection "Deploying Dynatrace Operator"
   # posssibility to load functions.sh and call dynatraceDeployOperator A B C to save credentials and override
   # or just run in normal deployment
+  #TODO: Evaluate also Tokens and not deploy if not found.
   dynatraceEvalReadSaveCredentials "$@"
   # new lines, needed for workflow-k8s-playground, cluster in dt needs to have the name k8s-playground-{requestuser} to be able to spin up multiple instances per tenant
 
@@ -743,7 +897,7 @@ generateDynakube(){
     ARM=false
 
     if [[ "$ARCH" == "x86_64" ]]; then
-      printInfo "Codespace is running in AMD (x86_64), Dynakube image is set as default to pull the latest from the tenant $DT_TENANT"
+      printInfo "Codespace is running in AMD (x86_64), Dynakube image is set as default to pull the latest from the environment $DT_ENVIRONMENT"
     elif [[ "$ARCH" == *"arm"* || "$ARCH" == *"aarch64"* ]]; then
       printWarn "Codespace is running in ARM architecture ($ARCH), Dynakube image will be set in Dynakube for AG and OneAgent."
       printWarn "ActiveGate image: $AG_IMAGE"
@@ -803,7 +957,7 @@ deployOperatorViaKubectl(){
 
   kubectl create namespace dynatrace
 
-  kubectl apply -f https://github.com/Dynatrace/dynatrace-operator/releases/download/v1.6.1/kubernetes-csi.yaml
+  kubectl apply -f https://github.com/Dynatrace/dynatrace-operator/releases/download/v${DT_OPERATOR_VERSION}/kubernetes-csi.yaml
 
   # Save Dynatrace Secret
   kubectl -n dynatrace create secret generic dev-container --from-literal="apiToken=$DT_OPERATOR_TOKEN" --from-literal="dataIngestToken=$DT_INGEST_TOKEN"
@@ -813,7 +967,7 @@ deployOperatorViaKubectl(){
 }
 
 deployOperatorViaHelm(){
-  helm install dynatrace-operator oci://public.ecr.aws/dynatrace/dynatrace-operator --create-namespace --namespace dynatrace --atomic
+  helm install dynatrace-operator oci://public.ecr.aws/dynatrace/dynatrace-operator --version "$DT_OPERATOR_VERSION" --create-namespace --namespace dynatrace --atomic
 
   # Save Dynatrace Secret
   kubectl -n dynatrace create secret generic dev-container --from-literal="apiToken=$DT_OPERATOR_TOKEN" --from-literal="dataIngestToken=$DT_INGEST_TOKEN"
@@ -828,9 +982,9 @@ undeployOperatorViaHelm(){
 
 
 installMkdocs(){
-  printInfoSection "Installing Mkdocs"
+  
   installRunme
-  printInfo "Installing MKdocs requirements"
+  printInfo "Installing MKdocs"
   pip install --break-system-packages -r docs/requirements/requirements-mkdocs.txt
   exposeMkdocs
 }
@@ -905,12 +1059,16 @@ getNextFreeAppPort() {
 
 
 deployAITravelAdvisorApp(){
+
   printInfoSection "Deploying AI Travel Advisor App & it's LLM"
   
-  if [[ "$ARCH" != "x86_64" ]]; then
-    printWarn "This version of the AI Travel Advisor only supports AMD/x86 architectures and not ARM, exiting deployment..."
-    return 1
+  if [ -z "$DT_LLM_TOKEN" ]; then
+    printError "DT_LLM_TOKEN token is missing"
   fi
+  
+  printInfo "Evaluating credentials"
+
+  dynatraceEvalReadSaveCredentials
   
   getNextFreeAppPort true
   PORT=$(getNextFreeAppPort)
@@ -921,7 +1079,7 @@ deployAITravelAdvisorApp(){
 
   kubectl apply -f $REPO_PATH/.devcontainer/apps/ai-travel-advisor/k8s/namespace.yaml
 
-  kubectl -n ai-travel-advisor create secret generic dynatrace --from-literal="token=$DT_TOKEN" --from-literal="endpoint=$DT_TENANT/api/v2/otlp"
+  kubectl -n ai-travel-advisor create secret generic dynatrace --from-literal="token=$DT_LLM_TOKEN" --from-literal="endpoint=$DT_TENANT/api/v2/otlp"
   
   # Start OLLAMA
   printInfo "Deploying our LLM => Ollama"
@@ -953,7 +1111,7 @@ deployAITravelAdvisorApp(){
   # Define the NodePort to expose the app from the Cluster
   kubectl patch service ai-travel-advisor --namespace=ai-travel-advisor --type='json' --patch="[{\"op\": \"replace\", \"path\": \"/spec/ports/0/nodePort\", \"value\":$PORT}]"
 
-  waitAppCanHandleRequests $PORT
+  waitAppCanHandleRequests $PORT 20
 
   printInfo "AI Travel Advisor is available via NodePort=$PORT"
 }
@@ -1055,7 +1213,6 @@ deployBugZapperApp(){
     return 1
   fi
 
-
   kubectl create ns bugzapper
 
   # Create deployment of todoApp
@@ -1095,12 +1252,11 @@ deployEasyTrade() {
   printInfo "Creating 'easytrade' namespace"
 
   kubectl create namespace easytrade
-  kubectl label namespace easytrade team=alpha stage=prod app.kubernetes.io/part-of=easytrade app.kubernetes.io/version=1.0.2
 
   # Deploy easytrade manifests
   printInfo "Deploying easytrade manifests"
 
-  kubectl apply -f $REPO_PATH/.devcontainer/apps/easytrade/k8s-manifests -n easytrade
+  kubectl apply -f $REPO_PATH/.devcontainer/apps/easytrade/manifests -n easytrade
 
   # Validate pods are running
   printInfo "Waiting for all pods to start"
@@ -1155,6 +1311,56 @@ deployHipsterShop() {
   printInfo "HipsterShop is available via NodePort=$PORT"
   
 }
+
+deployUnguard(){
+
+  printInfoSection "Deploying Unguard"
+  getNextFreeAppPort true
+  PORT=$(getNextFreeAppPort)
+  if [[ $? -ne 0 ]]; then
+    printWarn "Application can't be deployed, all NodePorts are busy"
+    return 1
+  fi
+
+  if [[ "$ARCH" != "x86_64" ]]; then
+    printWarn "This version of the Unguard only supports AMD/x86 architectures and not ARM, exiting deployment..."
+    return 1
+  fi
+
+  printInfo "Unguard repository https://github.com/dynatrace-oss/unguard/"
+
+  printInfo "Adding bitnami chart ..."
+  helm repo add bitnami https://charts.bitnami.com/bitnami
+
+  printInfo "Installing unguard-mariadb ..."
+  #helm install unguard-mariadb bitnami/mariadb --version 12.0.2 --set primary.persistence.enabled=false --wait --namespace unguard --create-namespace
+
+  helm install unguard-mariadb bitnami/mariadb \
+  --version 11.5.7 \
+  --set primary.persistence.enabled=false \
+  --set image.repository=bitnamilegacy/mariadb \
+  --namespace unguard --create-namespace
+
+  printInfo "waiting for mariadb to come online..."
+
+  waitForAllReadyPods unguard
+
+  printInfo "Installing Unguard"
+  helm install unguard  oci://ghcr.io/dynatrace-oss/unguard/chart/unguard --version 0.12.0 --namespace unguard 
+
+  kubectl patch service unguard-envoy-proxy --namespace=unguard --patch="{\"spec\": {\"type\": \"NodePort\", \"ports\": [{\"port\": 8080, \"nodePort\": $PORT }]}}"
+
+
+}
+
+undeployUnguard() {
+
+  printInfoSection "Undeploying Unguard"
+  helm uninstall unguard -n unguard
+  helm uninstall unguard-mariadb -n unguard
+  kubectl delete ns unguard --force
+}
+
 
 deployApp(){
   
@@ -1234,6 +1440,15 @@ deployApp(){
       fi
       ;;
 
+    7 | g | unguard)
+       if [[ $delete ]]; then
+        printInfo "Undeploying unguard..."
+        undeployUnguard
+      else
+        deployUnguard
+      fi
+      ;;
+
     *)
       printWarn "Invalid selection: '$input'. Please choose a valid app identifier."
       showDeployAppUsage
@@ -1253,12 +1468,13 @@ showDeployAppUsage(){
   printInfo "For undeploying an app, type -d as an extra argument                        "
   printInfo "----------------------------------------------------------------------------"
   printInfo "[#]  [c]  [ name ]             AMD     ARM                                  "
-  printInfo "[1]   a   ai-travel-advisor     +       -                                   "
+  printInfo "[1]   a   ai-travel-advisor     +       +                                   "
   printInfo "[2]   b   astroshop             +       -                                   "
   printInfo "[3]   c   bugzapper             +       +                                   "
   printInfo "[4]   d   easytrade             +       -                                   "
   printInfo "[5]   e   hipstershop           +       -                                   "
   printInfo "[6]   f   todoapp               +       +                                   "
+  printInfo "[7]   g   unguard               +       -                                   "
   printInfo "----------------------------------------------------------------------------"
 }
 
@@ -1289,6 +1505,7 @@ getRunningDockerContainernameByImagePattern(){
 
 verifyCodespaceCreation(){
   printInfoSection "Verify Codespace creation"
+  #TODO Enhance this function and send (part) of the error to the monitoring service
   calculateTime
   if [[ $INSTANTIATION_TYPE == "github-codespaces" ]]; then
     CODESPACE_ERRORS=$(cat $CODESPACE_PSHARE_FOLDER/creation.log | grep -i -E 'error|failed')
@@ -1322,8 +1539,8 @@ verifyCodespaceCreation(){
 
 calculateTime(){
   # Read from file
-  if [ -e "$ENV_FILE" ]; then
-    source $ENV_FILE
+  if [ -e "$COUNT_FILE" ]; then
+    source $COUNT_FILE
   fi
   # if equal 0 then set duration and update file
   if [ "$DURATION" -eq 0 ]; then 
@@ -1341,14 +1558,14 @@ updateEnvVariable(){
     #printInfo "update [$variable:${(P)variable}]"
     # indirect variable expansion in ZSH
     # shellcheck disable=SC2296
-    sed "s|^$variable=.*|$variable=${(P)variable}|" $ENV_FILE > $ENV_FILE.tmp
-    mv $ENV_FILE.tmp $ENV_FILE
+    sed "s|^$variable=.*|$variable=${(P)variable}|" $COUNT_FILE > $COUNT_FILE.tmp
+    mv $COUNT_FILE.tmp $COUNT_FILE
   else
     #printInfo "BASH"
     #printInfo "update [$variable:${!variable}]"
     # indirect variable expansion in BASH
-    sed "s|^$variable=.*|$variable=${!variable}|" $ENV_FILE  > $ENV_FILE.tmp
-    mv $ENV_FILE.tmp $ENV_FILE
+    sed "s|^$variable=.*|$variable=${!variable}|" $COUNT_FILE  > $COUNT_FILE.tmp
+    mv $COUNT_FILE.tmp $COUNT_FILE
   fi
   
   export $variable
@@ -1387,6 +1604,154 @@ finalizePostCreation(){
 runIntegrationTests(){
   #this function will trigger the integration Tests for this repo.
   bash "$REPO_PATH/.devcontainer/test/integration.sh"
+}
+
+calculateReadingTime(){
+  
+  printInfoSection "Calculating the reading time of the Documentation"
+  DOCS_DIR="/docs"
+  WORDS_PER_MIN=200
+  total_words=0
+  total_mins=0
+
+  printInfo "Section \t\t| Words \t| Estimated Reading Time (min)"
+  printInfo "--------\t\t|-------\t|-----------------------------"
+  find "$REPO_PATH/$DOCS_DIR" -type f -name "*.md" | while read -r file; do
+      section=$(basename "$file")
+      words=$(wc -w < "$file")
+      # Calculate reading time, rounding up
+      mins=$(( (words + WORDS_PER_MIN - 1) / WORDS_PER_MIN ))
+      total_words=$((total_words + words))
+      total_mins=$((total_mins + mins))
+
+      printInfo "$section \t\t| $words \t| $mins min"
+  done
+  
+  printInfo "---------------------------------------------"
+  printInfo "TOTAL     | $total_words | $total_mins min"
+
+}
+
+checkHost(){
+
+  printInfoSection "Verifying Host requirements"
+  make_available=false
+  docker_available=false
+  docker_accessible=false
+  node_available=false
+  npm_available=false
+  #TODO: Check that the files can be modified, needed for the docker user to write in the volume mount, test @ignacio.goldman setup.
+
+  # Check if host is Ubuntu
+  if grep -qi ubuntu /etc/os-release; then
+    printInfo "✅ Ubuntu detected"
+  else
+    printWarn "⚠️ Not Ubuntu, we can't guarantee proper functioning"
+  fi
+
+  # Check if make is installed
+  if command -v make >/dev/null; then
+    printInfo "✅ make is installed (version: $(make --version))"
+    make_available=true
+  else
+    printWarn "❌ make is NOT installed"
+    make_available=false
+  fi
+
+  # Check if docker is installed
+  if command -v docker >/dev/null; then
+    printInfo "✅ docker is installed (version: $(docker --version))"
+    docker_available=true
+  else
+    printWarn "❌ docker is NOT installed"
+    docker_available=false
+  fi
+
+  # Check if user has access to docker
+  if docker info >/dev/null 2>&1; then
+    printInfo "✅ Docker is accessible"
+    docker_accessible=true
+  else
+    printWarn "❌ No access to Docker"
+    docker_accessible=false
+  fi
+
+  # Check if node is installed
+  if command -v node >/dev/null; then
+    printInfo "✅ node is installed (version: $(node --version))"
+    node_available=true
+  else
+    printWarn "❌ node is NOT installed (needed for Dynatrace MCP Server)"
+    node_available=false
+  fi
+
+  # Check if npm is installed
+  if command -v npm >/dev/null; then
+    printInfo "✅ npm is installed (version: $(npm --version)) "
+    npm_available=true
+  else
+    printWarn "❌ npm is NOT installed (needed for MCP Server)"
+    npm_available=false
+  fi
+
+  # Prompt if any requirement is missing
+  if [ "$make_available" = false ] || [ "$docker_available" = false ] || [ "$docker_accessible" = false ] || [ "$node_available" = false ] || [ "$npm_available" = false ]; then
+    printWarn "One or more requirements are missing or not accessible"
+    printWarn "Would you like to attempt to correct them now? (y/n) 'yes' to run the commands for you, 'n' we only print how to resolve the issue"
+    read -r answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      # Install make if missing
+      if [ "$make_available" = false ]; then
+        printInfo "Installing make..."
+        sudo apt-get update && sudo apt-get install -y make
+      fi
+      # Install docker if missing
+      if [ "$docker_available" = false ]; then
+        printInfo "Installing docker..."
+        sudo apt-get update && sudo apt-get install -y docker.io
+        sudo systemctl enable --now docker
+      fi
+      # Add user to docker group if docker not accessible
+      if [ "$docker_accessible" = false ]; then
+        printInfo "Adding user $USER to docker group and restarting docker..."
+        sudo usermod -aG docker $USER
+        sudo systemctl restart docker
+        printWarn "You may need to log out and log back in for group changes to take effect."
+      fi
+      # Install node if missing
+      if [ "$node_available" = false ]; then
+        printInfo "Installing nodejs..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash - \
+          && sudo apt-get install -y nodejs 
+      fi
+      # Install npm if missing
+      if [ "$npm_available" = false ]; then
+        printInfo "Installing npm..."
+        sudo npm install -g npm@latest  && sudo rm -rf /var/lib/apt/lists/*
+      fi
+      printInfo "Auto-fix attempted. Please re-run this function or open a new shell."
+    else
+      printWarn "Host setup not corrected. Some features may not work as expected."
+      if [ "$make_available" = false ]; then
+        printInfo "To install make: sudo apt-get update && sudo apt-get install -y make"
+      fi
+      if [ "$docker_available" = false ]; then
+        printInfo "To install docker: sudo apt-get update && sudo apt-get install -y docker.io && sudo systemctl enable --now docker"
+      fi
+      if [ "$docker_accessible" = false ]; then
+        printInfo "To enable Docker access: sudo usermod -aG docker $USER && sudo systemctl restart docker (then log out and back in)"
+      fi
+      if [ "$node_available" = false ]; then
+        printInfo "To install nodejs: sudo apt-get update && sudo apt-get install -y nodejs"
+      fi
+      if [ "$npm_available" = false ]; then
+        printInfo "To install npm: sudo apt-get update && sudo apt-get install -y npm"
+      fi
+    fi
+  else
+    printInfo "✅ All requirements are met for running the enablement-framework. Navigate to the .devcontainer/ folder then 'make start' to start your enablement jouney 🚀"
+  fi
+
 }
 
 # Custom functions for each repo can be added in my_functions.sh

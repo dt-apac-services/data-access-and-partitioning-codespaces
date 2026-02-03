@@ -1,18 +1,11 @@
 #!/bin/bash
-
-# What this does?
-# - Normalize tenant URLs
-# - Create an API token (MONACO_TOKEN)
-# - Mirror tokens for consumers (DT_INGEST_TOKEN, DT_OPERATOR_TOKEN)
-# - Derive OAuth client ID from secret
-# - Choose SSO endpoint
-# - Export all variables for later use
+#loading functions to script
+export SECONDS=0
 source .devcontainer/util/source_framework.sh
 
 # Validate & prepare env (derives DT_TENANT, creates tokens, sets SSO_ENDPOINT, etc.)
 source ./.devcontainer/util/validate_inputs.sh "$DT_TENANT_3RDGEN" "$DT_TOKEN" "$CLIENT_SECRET" || exit 1
 
-# Cosmetic terminal setup
 setUpTerminal
 
 # Now safe to use DT_TENANT; pass 2 args to avoid "$2" being unbound in the function

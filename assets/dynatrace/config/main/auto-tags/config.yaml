@@ -1,8 +1,10 @@
 configs:
+  # NOTE: builtin:tags.auto-tagging is not available on 3rd-gen Dynatrace platform
+  # These configs are skipped. Use Grail/DQL-based tagging instead.
   - id: easytrade_tag
     config:
       template: easytrade_tag.json
-      skip: false
+      skip: true  # Classic schema not available on 3rd-gen
     type:
       settings:
         schema: builtin:tags.auto-tagging
@@ -10,7 +12,7 @@ configs:
   - id: component_tag
     config:
       template: component_tag.json
-      skip: false
+      skip: true  # Classic schema not available on 3rd-gen
     type:
       settings:
         schema: builtin:tags.auto-tagging
@@ -18,7 +20,7 @@ configs:
   - id: environment_tag
     config:
       template: environment_tag.json
-      skip: false
+      skip: true  # Classic schema not available on 3rd-gen
     type:
       settings:
         schema: builtin:tags.auto-tagging
@@ -26,7 +28,7 @@ configs:
   - id: platform_tag
     config:
       template: platform_tag.json
-      skip: false
+      skip: true  # Classic schema not available on 3rd-gen
     type:
       settings:
         schema: builtin:tags.auto-tagging
