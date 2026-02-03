@@ -8,14 +8,21 @@
 
 # VARIABLES DECLARATION
 # Active Gate Version - https://gallery.ecr.aws/dynatrace/dynatrace-activegate
-AG_IMAGE="public.ecr.aws/dynatrace/dynatrace-activegate:1.323.23.20250920-023800"
+AG_IMAGE="public.ecr.aws/dynatrace/dynatrace-activegate:1.327.28.20251118-083113"
 export AG_IMAGE=$AG_IMAGE
 # OneAgent Version - https://gallery.ecr.aws/dynatrace/dynatrace-oneagent
-OA_IMAGE="public.ecr.aws/dynatrace/dynatrace-oneagent:1.323.41.20251001-132006"
+OA_IMAGE="public.ecr.aws/dynatrace/dynatrace-oneagent:1.325.66.20251118-131645"
 export OA_IMAGE=$OA_IMAGE
+# Operator Version - https://github.com/Dynatrace/dynatrace-operator/releases
+DT_OPERATOR_VERSION="1.7.1"
+export DT_OPERATOR_VERSION=$DT_OPERATOR_VERSION
 
 ENDPOINT_CODESPACES_TRACKER=https://codespaces-tracker.whydevslovedynatrace.com/api/receive
 CODESPACES_TRACKER_TOKEN_STRING="ilovedynatrace"
+
+# Helm Version
+HELM_VERSION=3.17.0
+export HELM_VERSION=$HELM_VERSION
 
 #https://cert-manager.io/docs/release-notes/
 CERTMANAGER_VERSION=1.15.3
@@ -31,19 +38,23 @@ PORTS_STRING="${PORTS[*]}"
 # Export the string
 export NODE_PORTS="$PORTS_STRING"
 
-
-#if [ -z "$APPS" ]; then
-#  APPS=()
-#  export APPS=$APPS
-#fi
-
 # Setting up the variable since its not set when instantiating the vscode folder.
 #CODESPACE_VSCODE_FOLDER="$REPO_PATH"
 # Codespace Persisted share folder
 CODESPACE_PSHARE_FOLDER="/workspaces/.codespaces/.persistedshare"
 
 # Dynamic Variables between phases
-ENV_FILE="$REPO_PATH/.devcontainer/util/.env"
+COUNT_FILE="$REPO_PATH/.devcontainer/util/.count"
+export COUNT_FILE=$COUNT_FILE
+
+# Env file (needed for MCP and local runs)
+ENV_FILE="$REPO_PATH/.devcontainer/runlocal/.env"
+export ENV_FILE=$ENV_FILE
+
+if [ -e "$ENV_FILE" ]; then
+  # file exists
+  source $ENV_FILE
+fi
 
 # Calculating GH Repository
 if [ -z "$GITHUB_REPOSITORY" ]; then
@@ -63,13 +74,13 @@ else
 fi
 export INSTANTIATION_TYPE=$INSTANTIATION_TYPE
 
-if [ -e "$ENV_FILE" ]; then
+if [ -e "$COUNT_FILE" ]; then
   # file exists
-  source $ENV_FILE
+  source $COUNT_FILE
 else
   # create .env file and add variables
-  echo -e "DURATION=0\nERROR_COUNT=0" > $ENV_FILE
-  source $ENV_FILE
+  echo -e "DURATION=0\nERROR_COUNT=0" > $COUNT_FILE
+  source $COUNT_FILE
 fi
 
 # Calculating architecture
@@ -130,13 +141,3 @@ thickline="=====================================================================
 halfline="=============="
 thinline="___________________________________________________________________________________________"
 LOGNAME="dynatrace.enablement"
-
-# LabGuidePort
-WEBAPPPORT=30100
-if [[ $CODESPACES == true ]]; then
-  PRINT_USER=$GITHUB_USER
-  WEBAPP_URL="https://${CODESPACE_NAME}-$WEBAPPPORT.app.github.dev"
-else
-  PRINT_USER=$USER
-  WEBAPP_URL="http://0.0.0.0:$WEBAPPPORT"
-fi

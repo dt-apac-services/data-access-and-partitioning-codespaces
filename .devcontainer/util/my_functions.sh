@@ -135,4 +135,3 @@ _check_env_var() {
     return 0
   fi
 }
-
