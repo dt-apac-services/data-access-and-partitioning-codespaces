@@ -4,4 +4,4 @@
 
 The goal of this lab is for you to learn best practices for configuring data access & partitioning in Dynatrace.
 
-## [🧳 Start your journey here!](https://dynatrace-ace.github.io/data-access-and-partitioning-codespaces/)
+## [🧳 Start your journey here!](https://dt-apac-services.github.io/data-access-and-partitioning-codespaces/)
