@@ -184,6 +184,9 @@ CLIENT_ID="${_part1}.${_part2}"
 # EXPORT VARIABLES
 ##
 
+# Set DT_ENVIRONMENT to the 3rd-gen tenant URL (used by MCP server and other functions)
+DT_ENVIRONMENT="$DT_TENANT_3RDGEN"
+
 export DT_INGEST_TOKEN
 export DT_OPERATOR_TOKEN
 export MONACO_TOKEN
@@ -192,6 +195,7 @@ export DT_TENANT_3GEN
 export DT_TENANT
 export DT_TOKEN
 export CLIENT_ID
+export DT_ENVIRONMENT
 
 ##
 # print variables
