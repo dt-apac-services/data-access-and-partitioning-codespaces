@@ -1,8 +1,9 @@
 configs:
+  # NOTE: builtin:management-zones is not available on 3rd-gen Dynatrace platform
   - id: app_easytrade
     config:
       template: app_easytrade.json
-      skip: false
+      skip: true  # Classic schema not available on 3rd-gen
     type:
       settings:
         schema: builtin:management-zones

@@ -4,6 +4,28 @@
 # set -euo pipefail
 # fail() { echo -e "\n[ERROR] $*\n" >&2; return 1 2>/dev/null || exit 1; }
 
+##
+# Use positional arguments as fallback if env vars are not set
+##
+if [[ -n "$1" && -z "${DT_TENANT_3RDGEN:-}" ]]; then
+  DT_TENANT_3RDGEN="$1"
+fi
+if [[ -n "$2" && -z "${DT_TOKEN:-}" ]]; then
+  DT_TOKEN="$2"
+fi
+if [[ -n "$3" && -z "${CLIENT_SECRET:-}" ]]; then
+  CLIENT_SECRET="$3"
+fi
+
+# Debug: print what we received
+echo "[DEBUG] DT_TENANT_3RDGEN=${DT_TENANT_3RDGEN:-<empty>}"
+echo "[DEBUG] DT_TOKEN=${DT_TOKEN:+<set>}${DT_TOKEN:-<empty>}"
+
+# Validate required variables
+if [[ -z "${DT_TENANT_3RDGEN:-}" ]]; then
+  echo "[ERROR] DT_TENANT_3RDGEN is not set. Please provide it as an environment variable or Codespaces secret."
+  exit 1
+fi
 
 ##
 # Validate dt tenant url
@@ -204,6 +226,7 @@ echo "MONACO_TOKEN=$MONACO_TOKEN"
 echo "DT_TENANT_3RDGEN=$DT_TENANT_3RDGEN"
 echo "DT_TENANT_3GEN=$DT_TENANT_3GEN"
 echo "DT_TENANT=$DT_TENANT"
+echo "DT_ENVIRONMENT=$DT_ENVIRONMENT"
 echo "DT_TOKEN=$DT_TOKEN"
 echo "CLIENT_SECRET=$CLIENT_SECRET"
 echo "CLIENT_ID=$CLIENT_ID"
