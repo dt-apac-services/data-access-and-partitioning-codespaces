@@ -10,7 +10,7 @@ CLIENT_SECRET=<oauth-secret-acc-mgmt>
 
 1. Click here to start configuring your codespace 
   
-    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/dynatrace-ace/data-access-and-partitioning-codespaces?quickstart=1&machine=basicLinux32gb){target="\_blank"}
+    [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new/dt-apac-services/data-access-and-partitioning-codespaces?quickstart=1&machine=basicLinux32gb){target="\_blank"}
 
     
 ## ☕️ Wait, Learn & Validate
