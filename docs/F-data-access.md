@@ -196,5 +196,5 @@ SCREENSHOT K8S APP, LOGS, PROBLEMS
 - [Example vodafone custom]()
 
 <div class="grid cards" markdown>
-- [Let's continue:octicons-arrow-right-24:](7-data-segmentation.md)
+- [Let's continue:octicons-arrow-right-24:](G-data-segmentation.md)
 </div>

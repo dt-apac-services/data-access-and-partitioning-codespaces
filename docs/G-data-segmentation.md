@@ -108,5 +108,5 @@ Use Segments to scope dashboard tiles.
 > Final dashboard view
 
 <div class="grid cards" markdown>
-- [Let's continue:octicons-arrow-right-24:](8-data-partitioning-and-cost-allocation.md)
+- [Let's continue:octicons-arrow-right-24:](H-data-partitioning-and-cost-allocation.md)
 </div>

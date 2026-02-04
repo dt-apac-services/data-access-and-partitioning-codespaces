@@ -101,5 +101,5 @@ Step-by-Step Instructions:
 4. To verify your configuration - go to [demo.live](https://guu84124.apps.dynatrace.com/ui/apps/dynatrace.launcher/) > Dashboards > All Dashboards > Download the dashboard "DPS Cost Allocation - Usage & Costs v1.3". Upload it to your personal Dynatrace tenant. This dashboard will display cost allocation details based on your tagging and enrichment setup.
 
 <div class="grid cards" markdown>
-- [Let's continue:octicons-arrow-right-24:](cleanup.md)
+- [Let's continue:octicons-arrow-right-24:](I-cleanup.md)
 </div>
